@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Dash: Shop Edition</title>
+    <style>
+        body {
+            display: flex; flex-direction: column; align-items: center;
+            margin: 0; background-color: #0a0a0a; font-family: 'Segoe UI', sans-serif;
+            color: white; touch-action: none; overflow: hidden;
+        }
+        #stats-bar {
+            width: 95vw; max-width: 800px; display: flex; justify-content: space-between;
+            padding: 10px; font-weight: bold; font-size: 18px; color: #f1c40f;
+        }
+        canvas {
+            border: 3px solid #333; border-radius: 8px;
+            width: 95vw; max-width: 800px; background: #000022;
+        }
+        #shop {
+            width: 95vw; max-width: 800px; margin-top: 15px;
+            background: #1a1a1a; padding: 15px; border-radius: 10px;
+            border: 1px solid #333;
+        }
+        .shop-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 10px; margin-top: 10px;
+        }
+        .item {
+            background: #222; border: 2px solid #444; border-radius: 5px;
+            padding: 10px; text-align: center; cursor: pointer; transition: 0.2s;
+        }
+        .item.unlocked { border-color: #27ae60; }
+        .item.equipped { background: #27ae60; border-color: #fff; }
+        .item:hover { transform: scale(1.05); }
+        .price { font-size: 12px; color: #f1c40f; display: block; }
+        #progress { width: 95vw; max-width: 800px; height: 6px; background: #222; margin-top: 5px; }
+        #bar { height: 100%; width: 0%; background: #0f0; }
+    </style>
+</head>
+<body>
+
+<div id="stats-bar">
+    <span>🏆 BEST: <span id="bestText">0</span></span>
+    <span>💰 COINS: <span id="coinText">0</span></span>
+</div>
+
+<canvas id="game" width="800" height="400"></canvas>
+<div id="progress"><div id="bar"></div></div>
+
+<div id="shop">
+    <strong style="color: #0f0;">SKIN SHOP</strong> (1 Coin per 25 Spikes)
+    <div class="shop-grid" id="shopGrid"></div>
+</div>
+
+<script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    
+    // Data Management
+    let data = JSON.parse(localStorage.getItem("dash_save")) || {
+        best: 0,
+        coins: 0,
+        unlocked: ["#00ff00"], // Default Green
+        equipped: "#00ff00"
+    };
+
+    const shopItems = [
+        {color: "#00ff00", price: 0},
+        {color: "#ff0000", price: 2},
+        {color: "#00ffff", price: 5},
+        {color: "#ff00ff", price: 10},
+        {color: "#ffff00", price: 15},
+        {color: "#ffffff", price: 25},
+        {color: "#ff8800", price: 50}
+    ];
+
+    let score = 0;
+    let gameActive = true;
+    let speed = 6;
+    let obstacles = [];
+    let frame = 0;
+    const groundY = 350;
+
+    const player = {
+        x: 100, y: 310, w: 40, h: 40, dy: 0,
+        jump: function() { if(this.y >= groundY - this.h) this.dy = -16; }
+    };
+
+    function save() {
+        localStorage.setItem("dash_save", JSON.stringify(data));
+        document.getElementById("bestText").innerText = data.best;
+        document.getElementById("coinText").innerText = data.coins;
+        renderShop();
+    }
+
+    function renderShop() {
+        const grid = document.getElementById("shopGrid");
+        grid.innerHTML = "";
+        shopItems.forEach(item => {
+            const isUnlocked = data.unlocked.includes(item.color);
+            const isEquipped = data.equipped === item.color;
+            
+            const div = document.createElement("div");
+            div.className = `item ${isUnlocked ? 'unlocked' : ''} ${isEquipped ? 'equipped' : ''}`;
+            div.style.borderBottom = `4px solid ${item.color}`;
+            div.innerHTML = isUnlocked ? (isEquipped ? "READY" : "EQUIP") : `<span class="price">${item.price} 💰</span>`;
+            
+            div.onclick = () => {
+                if(isUnlocked) {
+                    data.equipped = item.color;
+                } else if(data.coins >= item.price) {
+                    data.coins -= item.price;
+                    data.unlocked.push(item.color);
+                    data.equipped = item.color;
+                }
+                save();
+            };
+            grid.appendChild(div);
+        });
+    }
+
+    function spawn() {
+        let type = Math.random();
+        let obs = { x: 850, w: 40, h: 40, passed: false };
+        if(type > 0.7) obs.w = 80;
+        if(type > 0.9) obs.h = 80;
+        obstacles.push(obs);
+    }
+
+    function loop() {
+        if(!gameActive) return;
+
+        // Draw World
+        ctx.fillStyle = "#000022"; ctx.fillRect(0,0,800,400);
+        ctx.fillStyle = "#111"; ctx.fillRect(0, groundY, 800, 50);
+        ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-5, groundY, 810, 2);
+
+        // Player Physics
+        player.dy += 0.9;
+        player.y += player.dy;
+        if(player.y > groundY - player.h) { player.y = groundY - player.h; player.dy = 0; }
+
+        // Obstacles
+        if(frame % 90 === 0) spawn();
+        obstacles.forEach((o, i) => {
+            o.x -= speed;
+            ctx.fillStyle = "#ff3300";
+            ctx.fillRect(o.x, groundY - o.h, o.w, o.h);
+            ctx.strokeStyle = "white"; ctx.strokeRect(o.x, groundY - o.h, o.w, o.h);
+
+            // Collision
+            if(player.x < o.x + o.w - 5 && player.x + player.w > o.x + 5 && player.y + player.h > groundY - o.h + 5) {
+                gameActive = false;
+                if(score > data.best) data.best = score;
+                save();
+                setTimeout(() => { score = 0; speed = 6; obstacles = []; gameActive = true; frame = 0; loop(); }, 1000);
+            }
+            
+            // Score & Coin Logic
+            if(!o.passed && o.x < player.x) {
+                o.passed = true;
+                score++;
+                speed += 0.05;
+                if(score % 25 === 0) {
+                    data.coins += 1;
+                    save();
+                }
+                document.getElementById("bar").style.width = ((score % 25) / 25 * 100) + "%";
+            }
+            if(o.x + o.w < 0) obstacles.splice(i, 1);
+        });
+
+        // Draw Player (Always Last)
+        ctx.fillStyle = data.equipped;
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+        ctx.strokeStyle = "white"; ctx.lineWidth = 3;
+        ctx.strokeRect(player.x, player.y, player.w, player.h);
+        ctx.fillStyle = "black";
+        ctx.fillRect(player.x+25, player.y+10, 6, 6); ctx.fillRect(player.x+10, player.y+10, 6, 6);
+
+        ctx.fillStyle = "white"; ctx.font = "bold 20px Arial";
+        ctx.fillText("SCORE: " + score, 20, 30);
+
+        frame++;
+        requestAnimationFrame(loop);
+    }
+
+    window.addEventListener("keydown", (e) => { if(e.code === "Space") player.jump(); });
+    window.addEventListener("pointerdown", () => { player.jump(); });
+
+    save(); // Init display
+    loop();
+</script>
+
+</body>
+</html>
